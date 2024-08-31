@@ -4,6 +4,7 @@
 #include"SplatServer.hpp"
 #include"IntegralReconstruction.hpp"
 #include"ModelFunction.hpp"
+#include"GaussianViewAngle/GaussianViewAngle.h"
 
 //把颜色信息保存到SplatScene里面
 static void loadColorToSplatScene(Model& model, SplatScene& splatScene)
@@ -243,10 +244,63 @@ static float* getGaussianList(Model& model)
 	return reinterpret_cast<float*>(model.means.data_ptr());
 }
 
-//从input里面获取camera光心的列表
-static float* getCamCenterList()
+//获取一个四元数的逆旋转
+static void invertQuanternions(float* quanternions,float* dstInvertQuant)
 {
+	//记录w
+	dstInvertQuant[0] = quanternions[0];
+	for (int i = 1; i < 4; ++i)
+		dstInvertQuant[i] = -quanternions[i];
+}
 
+//把四元数转换成旋转矩阵
+static void convertQuanternionsToRotMat(float* q, float* rotMat)
+{
+	rotMat[0] = 1 - 2 * (q[2] * q[2] + q[3] * q[3]);
+	rotMat[1] = 2 * (q[1] * q[2] - q[0] * q[3]);
+	rotMat[2] = 2 * (q[1] * q[3] + q[0] * q[2]);
+	rotMat[3] = 2 * (q[1] * q[2] + q[0] * q[3]);
+	rotMat[4] = 1 - 2 * (q[1] * q[1] + q[3] * q[3]);
+	rotMat[5] = 2 * (q[2] * q[3] - q[0] * q[1]);
+	rotMat[6] = 2 * (q[1] * q[3] - q[0] * q[2]);
+	rotMat[7] = 2 * (q[2] * q[3] + q[0] * q[1]);
+	rotMat[8] = 1 - 2 * (q[1] * q[1] + q[2] * q[2]);
+}
+
+//对点执行旋转操作
+static void applyRotation(float* rotation,float* point,float* dstPoint)
+{
+	for (int idRow = 0; idRow < 3; ++idRow)
+	{
+		dstPoint[idRow] = 0;
+		for (int i = 0; i < 3; ++i)
+		{
+			dstPoint[idRow] += rotation[idRow * 3 + i] * point[i];
+		}
+	}
+}
+
+//从input里面获取camera光心的列表
+static void getCamCenterList(std::vector<float>& dstCenterList,
+	SparseScene& scene
+)
+{
+	//scene里面的相机列表
+	auto& cameraList = scene.cameraList;
+	//遍历读取每个相机 注意这里后面需要用多线程加速一下
+	dstCenterList.resize(cameraList.size() * 3);
+	for (uint32_t i = 0; i < cameraList.size(); ++i)
+	{
+		auto& tempCamera = cameraList[i];
+		//获取这个四元数的逆旋转
+		float invertQuant[4];
+		invertQuanternions(tempCamera.rotation, invertQuant);
+		//把四元数转换成旋转矩阵
+		float rotMat[9];
+		convertQuanternionsToRotMat(invertQuant, rotMat);
+		//对一个3D点做旋转
+		applyRotation(rotMat, tempCamera.translation, &dstCenterList[i * 3]);
+	}
 }
 
 extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
@@ -276,6 +330,12 @@ extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
 	Model* retModel;
 	//调用splat的计算
 	splatServer(sparseScene, "E:/temp/splat.ply", retModel);
+	//获取center的列表
+	std::vector<float> camCenterList;
+	getCamCenterList(camCenterList, sparseScene);
+	std::vector<float> viewAngle(getPointNum(*retModel) * 4);
+	getGaussianViewAngle(getGaussianList(*retModel), camCenterList.data(),
+		viewAngle.data());
 	//调用模型的转换
 	convertToSplatScene(*retModel, *splatScene);
 }

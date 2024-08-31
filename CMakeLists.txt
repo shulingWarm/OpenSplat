@@ -327,4 +327,4 @@ add_subdirectory(GaussianViewAngle)
 #添加完整重建流程的可执行程序
 add_library(IntegralReconstruction SHARED IntegralReconstruction.cpp)
 #同时链接colmap和opensplat
-target_link_libraries(IntegralReconstruction ColmapServer SplatLib)
+target_link_libraries(IntegralReconstruction ColmapServer SplatLib GaussianViewAngle)
