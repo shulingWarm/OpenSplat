@@ -322,6 +322,8 @@ find_package(colmap PATHS "E:/privateSpace/workSpace/504colmap/install/share/col
 
 add_subdirectory(ColmapServer)
 
+add_subdirectory(GaussianViewAngle)
+
 #添加完整重建流程的可执行程序
 add_library(IntegralReconstruction SHARED IntegralReconstruction.cpp)
 #同时链接colmap和opensplat

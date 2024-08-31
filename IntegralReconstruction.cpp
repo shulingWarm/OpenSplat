@@ -237,6 +237,18 @@ static void loadSplatScene(SplatScene& splatScene)
 	fileHandle.close();
 }
 
+//从model里面获取gaussian点的列表
+static float* getGaussianList(Model& model)
+{
+	return reinterpret_cast<float*>(model.means.data_ptr());
+}
+
+//从input里面获取camera光心的列表
+static float* getCamCenterList()
+{
+
+}
+
 extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
 	const char* workspaceStr,void* dstScene)
 {
