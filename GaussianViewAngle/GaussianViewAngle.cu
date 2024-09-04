@@ -41,6 +41,19 @@ __device__ float computeAngle<false>(float* pointDiff) //3D gaussian的坐标
         norm3df(pointDiff[0],pointDiff[1], 0));
 }
 
+//计算两个角度的绝对差
+//如果angle在baseAngle的逆时针方向，则返回正数
+//如果angle在baseAngle的顺时针方向，则返回负数
+__device__ float getAbsAngleDiff(float angle, float baseAngle)
+{
+    float angleDiff = fmod(angle - baseAngle + 6.28318530718, 6.28318530718);
+    if (angleDiff > 3.14159265359)
+    {
+        return angleDiff - 6.28318530718;
+    }
+    return angleDiff;
+}
+
 //一个最佳角度的比较周期
 template<bool FIRST_LOOP> //判断是否为第一次循环
 __device__ float compareAngleOneLoop(Point3D* sharedHead,
@@ -58,13 +71,19 @@ __device__ float compareAngleOneLoop(Point3D* sharedHead,
     //判断是不是第一次记录
     if constexpr (FIRST_LOOP)
     {
-        bestAngle[0] = xAngle;
-        bestAngle[1] = xAngle;
-        bestAngle[2] = yAngle;
-        bestAngle[3] = yAngle;
+        bestAngle[0] = 0;
+        bestAngle[1] = 0;
+        bestAngle[2] = 0;
+        bestAngle[3] = 0;
+        // 记录 x y角度的基准值
+        bestAngle[4] = xAngle;
+        bestAngle[5] = yAngle;
     }
     else
     {
+        //计算两个角度的绝对差
+        xAngle = getAbsAngleDiff(xAngle, bestAngle[4]);
+        yAngle = getAbsAngleDiff(yAngle, bestAngle[5]);
         bestAngle[0] = fmin(xAngle, bestAngle[0]);
         bestAngle[1] = fmax(xAngle, bestAngle[1]);
         bestAngle[2] = fmin(yAngle, bestAngle[2]);
@@ -106,6 +125,53 @@ __device__ void bestAngleOneLoop(Point3D* sharedHead, //共享内存的头指针，会用于
     }
 }
 
+//把某个角度处理到0-2PI的范围
+inline __device__ float getStandardAngle(float angle)
+{
+    return fmod(angle + 6.28318530718, 6.28318530718);
+}
+
+//最终的角度归约操作
+__device__ void angleRangeReduction(float* bestAngle,uint32_t cameraNum)
+{
+    //把线程负责的角度重置到0-2PI
+    bestAngle[4] = getStandardAngle(bestAngle[4]);
+    bestAngle[5] = getStandardAngle(bestAngle[5]);
+    // 按照蝶式归约计算
+    for (int i = 32; i > 1; i/=2)
+    {
+        //计算x位置角度的最大值和最小值
+        float xMinAngle = getStandardAngle(bestAngle[4] + bestAngle[0]);
+        float xMaxAngle = getStandardAngle(bestAngle[4] + bestAngle[1]);
+        //计算y方向的角度的最大值和最小值
+        float yMinAngle = getStandardAngle(bestAngle[5] + bestAngle[2]);
+        float yMaxAngle = getStandardAngle(bestAngle[5] + bestAngle[3]);
+        //获取相邻位置的xy的角度范围
+        float neighborAngle[4];
+        neighborAngle[0] = __shfl_xor_sync(0xffffffff, xMinAngle, i - 1);
+        neighborAngle[1] = __shfl_xor_sync(0xffffffff, xMaxAngle, i - 1);
+        neighborAngle[2] = __shfl_xor_sync(0xffffffff, yMinAngle, i - 1);
+        neighborAngle[3] = __shfl_xor_sync(0xffffffff, yMaxAngle, i - 1);
+        //计算角度的中值差
+        neighborAngle[0] = getAbsAngleDiff(neighborAngle[0], bestAngle[4]);
+        neighborAngle[1] = getAbsAngleDiff(neighborAngle[1], bestAngle[4]);
+        neighborAngle[2] = getAbsAngleDiff(neighborAngle[2], bestAngle[5]);
+        neighborAngle[3] = getAbsAngleDiff(neighborAngle[3], bestAngle[5]);
+        //重新合并角度
+        bestAngle[0] = fmin(bestAngle[0], neighborAngle[0]);
+        bestAngle[1] = fmax(bestAngle[1], neighborAngle[1]);
+        bestAngle[2] = fmin(bestAngle[2], neighborAngle[2]);
+        bestAngle[3] = fmax(bestAngle[3], neighborAngle[3]);
+    }
+    //计算最小角度 这样它就只有0,1,2,3这4个角度值是有意义的了
+    bestAngle[0] = getStandardAngle(bestAngle[4] + bestAngle[0]);
+    bestAngle[1] = getStandardAngle(bestAngle[4] + bestAngle[1]);
+    bestAngle[1] = getAbsAngleDiff(bestAngle[1], bestAngle[0]);
+    bestAngle[2] = getStandardAngle(bestAngle[5] + bestAngle[2]);
+    bestAngle[3] = getStandardAngle(bestAngle[5] + bestAngle[3]);
+    bestAngle[3] = getAbsAngleDiff(bestAngle[3], bestAngle[2]);
+}
+
 template<uint32_t CAM_LOAD_NUM>
 __global__ void computeGaussianViewAngle(
     Point3D* gaussianList, Point3D* camCenterList,
@@ -119,19 +185,24 @@ __global__ void computeGaussianViewAngle(
     if (idPoint >= gaussianNum)
         return;
     //初始化当前线程维度的最值
-    float bestAngle[4];
+    float bestAngle[6];
     //准备当前的gaussian点
     auto gaussianPoint = gaussianList[idPoint];
     //先进行第一步循环
     bestAngleOneLoop<true, CAM_LOAD_NUM, CAM_LOAD_NUM>(sharedCamCenter, camCenterList, &gaussianPoint,
         bestAngle, cameraNum);
     //进行后续循环
-    for (uint32_t idCamera = 0; idCamera < cameraNum; idCamera += CAM_LOAD_NUM)
+    for (uint32_t idCamera = 1; idCamera < cameraNum; idCamera += CAM_LOAD_NUM)
     {
         __syncthreads();
         bestAngleOneLoop<false, CAM_LOAD_NUM, CAM_LOAD_NUM>(sharedCamCenter,
-            camCenterList + idCamera, &gaussianPoint, bestAngle, cameraNum);
+            camCenterList + idCamera, &gaussianPoint, bestAngle, cameraNum - idCamera * CAM_LOAD_NUM);
     }
+    __syncthreads();
+    //调用最终的角度归约
+    angleRangeReduction(bestAngle, cameraNum);
+    //把归约后的角度保存到view range
+
 }
 
 //调用计算每个3D gaussian的合法观察角度
