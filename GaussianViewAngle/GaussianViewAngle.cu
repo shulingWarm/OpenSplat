@@ -201,8 +201,14 @@ __global__ void computeGaussianViewAngle(
     __syncthreads();
     //调用最终的角度归约
     angleRangeReduction(bestAngle, cameraNum);
+    //计算当前线程应该写入的归约角度位置
+    float* dstViewHead = dstViewAngle + idPoint * 4;
     //把归约后的角度保存到view range
-
+    if (threadIdx.x % 32 == 0)
+    {
+        for (int i = 0; i < 4; ++i)
+            dstViewHead[i] = bestAngle[i];
+    }
 }
 
 //调用计算每个3D gaussian的合法观察角度
@@ -222,4 +228,16 @@ void getGaussianViewAngle(float* gaussianList, float* camCenterList,
     computeGaussianViewAngle<256> << <(gaussianNum + 1) / 2, 256 >> > (
         (Point3D*)gaussianList, (Point3D*)gpuCamCenter,
         gpuViewAngle, cameraNum, gaussianNum);
+    //把视角范围复制到cpu
+    cudaHandleError(cudaMemcpy(dstViewAngle, gpuViewAngle, sizeof(float) * gaussianNum * 4,
+        cudaMemcpyDeviceToHost));
+    //准备打印前10个点的视角范围
+    for (int i = 0; i < 10; ++i)
+    {
+        for (int j = 0; j < 4; ++j)
+        {
+            std::cout << dstViewAngle[i * 4 + j] << " ";
+        }
+        std::cout << std::endl;
+    }
 }
