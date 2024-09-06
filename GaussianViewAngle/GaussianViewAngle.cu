@@ -240,4 +240,7 @@ void getGaussianViewAngle(float* gaussianList, float* camCenterList,
         }
         std::cout << std::endl;
     }
+    //释放这中间用到的gpu内存
+    cudaHandleError(cudaFree(gpuCamCenter));
+    cudaHandleError(cudaFree(gpuViewAngle));
 }
