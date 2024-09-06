@@ -231,15 +231,6 @@ void getGaussianViewAngle(float* gaussianList, float* camCenterList,
     //把视角范围复制到cpu
     cudaHandleError(cudaMemcpy(dstViewAngle, gpuViewAngle, sizeof(float) * gaussianNum * 4,
         cudaMemcpyDeviceToHost));
-    //准备打印前10个点的视角范围
-    for (int i = 0; i < 10; ++i)
-    {
-        for (int j = 0; j < 4; ++j)
-        {
-            std::cout << dstViewAngle[i * 4 + j] << " ";
-        }
-        std::cout << std::endl;
-    }
     //释放这中间用到的gpu内存
     cudaHandleError(cudaFree(gpuCamCenter));
     cudaHandleError(cudaFree(gpuViewAngle));

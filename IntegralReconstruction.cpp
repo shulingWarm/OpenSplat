@@ -303,6 +303,21 @@ static void getCamCenterList(std::vector<float>& dstCenterList,
 	}
 }
 
+//保存3D高斯的视角范围
+static void saveGaussianViewRange(
+	float* viewRange,
+	uint32_t gaussianNum,
+	std::string filePath
+)
+{
+	std::fstream fileHandle(filePath, std::ios::out | std::ios::binary);
+	//写入gaussian的个数
+	fileHandle.write((char*)&gaussianNum, sizeof(uint32_t));
+	//保存这里面真正的点个数
+	fileHandle.write((char*)viewRange, sizeof(float) * gaussianNum * 4);
+	fileHandle.close();
+}
+
 extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
 	const char* workspaceStr,void* dstScene)
 {
@@ -338,6 +353,9 @@ extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
 	getGaussianViewAngle(getGaussianList(*retModel), camCenterList.data(),
 		viewAngle.data(), camCenterList.size() / 3,
 		gaussianNum);
+	//保存每个 3D gaussian的视角范围
+	saveGaussianViewRange(viewAngle.data(), gaussianNum,
+		"D:/temp/viewRange.bin");
 	//调用模型的转换
 	convertToSplatScene(*retModel, *splatScene);
 }
