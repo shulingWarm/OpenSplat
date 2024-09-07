@@ -187,7 +187,13 @@ __global__ void computeGaussianViewAngle(
     //初始化当前线程维度的最值
     float bestAngle[6];
     //准备当前的gaussian点
+    //为了和UE里面的变换保持一致，这里把点坐标加载成(x,-z,-y)
     auto gaussianPoint = gaussianList[idPoint];
+    {
+        float temp = gaussianPoint.y;
+        gaussianPoint.y = -gaussianPoint.z;
+        gaussianPoint.z = -temp;
+    }
     //先进行第一步循环
     bestAngleOneLoop<true, CAM_LOAD_NUM, CAM_LOAD_NUM>(sharedCamCenter, camCenterList, &gaussianPoint,
         bestAngle, cameraNum);

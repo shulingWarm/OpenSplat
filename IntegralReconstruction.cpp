@@ -300,6 +300,12 @@ static void getCamCenterList(std::vector<float>& dstCenterList,
 		convertQuanternionsToRotMat(invertQuant, rotMat);
 		//对一个3D点做旋转
 		applyRotation(rotMat, tempCamera.translation, &dstCenterList[i * 3]);
+		//把相机光心变换成x,-z,-y，这是为了和UE里面的gaussian预加载保持一致
+		auto camCenterHead = &dstCenterList[i * 3];
+		auto y = camCenterHead[1];
+		auto z = camCenterHead[2];
+		camCenterHead[1] = -z;
+		camCenterHead[2] = -y;
 	}
 }
 
