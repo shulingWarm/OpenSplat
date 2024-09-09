@@ -30,15 +30,15 @@ __device__ float computeAngle(float* pointDiff);
 template<>
 __device__ float computeAngle<true>(float* pointDiff) //3D gaussian的坐标
 {
-    return atan2(pointDiff[0], pointDiff[1]);
+    return atan2(pointDiff[1], pointDiff[2]);
 }
 
 //计算两个相机的夹角
 template<>
 __device__ float computeAngle<false>(float* pointDiff) //3D gaussian的坐标
 {
-    return atan2(pointDiff[2],
-        norm3df(pointDiff[0],pointDiff[1], 0));
+    return acos(pointDiff[2]/
+        norm3df(pointDiff[0],pointDiff[1], pointDiff[2]));
 }
 
 //计算两个角度的绝对差
