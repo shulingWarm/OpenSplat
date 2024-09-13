@@ -58,7 +58,7 @@ __device__ float getAbsAngleDiff(float angle, float baseAngle)
 template<bool FIRST_LOOP> //判断是否为第一次循环
 __device__ float compareAngleOneLoop(Point3D* sharedHead,
     Point3D* gaussianHead,
-    float* bestAngle
+    uint32_t* bestAngle
 )
 {
     //计算差值向量
@@ -69,26 +69,26 @@ __device__ float compareAngleOneLoop(Point3D* sharedHead,
     float xAngle = computeAngle<true>(pointDiff);
     float yAngle = computeAngle<false>(pointDiff);
     //判断是不是第一次记录
-    if constexpr (FIRST_LOOP)
-    {
-        bestAngle[0] = 0;
-        bestAngle[1] = 0;
-        bestAngle[2] = 0;
-        bestAngle[3] = 0;
-        // 记录 x y角度的基准值
-        bestAngle[4] = xAngle;
-        bestAngle[5] = yAngle;
-    }
-    else
-    {
-        //计算两个角度的绝对差
-        xAngle = getAbsAngleDiff(xAngle, bestAngle[4]);
-        yAngle = getAbsAngleDiff(yAngle, bestAngle[5]);
-        bestAngle[0] = fmin(xAngle, bestAngle[0]);
-        bestAngle[1] = fmax(xAngle, bestAngle[1]);
-        bestAngle[2] = fmin(yAngle, bestAngle[2]);
-        bestAngle[3] = fmax(yAngle, bestAngle[3]);
-    }
+    //if constexpr (FIRST_LOOP)
+    //{
+    //    bestAngle[0] = 0;
+    //    bestAngle[1] = 0;
+    //    bestAngle[2] = 0;
+    //    bestAngle[3] = 0;
+    //    // 记录 x y角度的基准值
+    //    bestAngle[4] = xAngle;
+    //    bestAngle[5] = yAngle;
+    //}
+    //else
+    //{
+    //    //计算两个角度的绝对差
+    //    xAngle = getAbsAngleDiff(xAngle, bestAngle[4]);
+    //    yAngle = getAbsAngleDiff(yAngle, bestAngle[5]);
+    //    bestAngle[0] = fmin(xAngle, bestAngle[0]);
+    //    bestAngle[1] = fmax(xAngle, bestAngle[1]);
+    //    bestAngle[2] = fmin(yAngle, bestAngle[2]);
+    //    bestAngle[3] = fmax(yAngle, bestAngle[3]);
+    //}
 }
 
 //一个计算周期
@@ -99,7 +99,7 @@ template<bool FIRST_LOOP, //是否要作为第一步来处理
 __device__ void bestAngleOneLoop(Point3D* sharedHead, //共享内存的头指针，会用于往这里面存储数据
     Point3D* camCenterList, //相机光心列表，这是global memory
     Point3D* gaussianPoint, //3D高斯点, 这里面仅仅是一个3D坐标 属于是寄存器上面的指针
-    float* bestAngle, //目前的最佳角度 它可能是未初始化过的，这会由FIRST_STEP这个模板参数来决定
+    uint32_t* bestAngle, //目前的最佳角度 它可能是未初始化过的，这会由FIRST_STEP这个模板参数来决定
     unsigned cameraNum //剩余需要读取的相机个数
 )
 {
@@ -132,44 +132,44 @@ inline __device__ float getStandardAngle(float angle)
 }
 
 //最终的角度归约操作
-__device__ void angleRangeReduction(float* bestAngle,uint32_t cameraNum)
+__device__ void angleRangeReduction(uint32_t* bestAngle,uint32_t cameraNum)
 {
     //把线程负责的角度重置到0-2PI
-    bestAngle[4] = getStandardAngle(bestAngle[4]);
-    bestAngle[5] = getStandardAngle(bestAngle[5]);
-    // 按照蝶式归约计算
-    for (int i = 32; i > 1; i/=2)
-    {
-        //计算x位置角度的最大值和最小值
-        float xMinAngle = getStandardAngle(bestAngle[4] + bestAngle[0]);
-        float xMaxAngle = getStandardAngle(bestAngle[4] + bestAngle[1]);
-        //计算y方向的角度的最大值和最小值
-        float yMinAngle = getStandardAngle(bestAngle[5] + bestAngle[2]);
-        float yMaxAngle = getStandardAngle(bestAngle[5] + bestAngle[3]);
-        //获取相邻位置的xy的角度范围
-        float neighborAngle[4];
-        neighborAngle[0] = __shfl_xor_sync(0xffffffff, xMinAngle, i - 1);
-        neighborAngle[1] = __shfl_xor_sync(0xffffffff, xMaxAngle, i - 1);
-        neighborAngle[2] = __shfl_xor_sync(0xffffffff, yMinAngle, i - 1);
-        neighborAngle[3] = __shfl_xor_sync(0xffffffff, yMaxAngle, i - 1);
-        //计算角度的中值差
-        neighborAngle[0] = getAbsAngleDiff(neighborAngle[0], bestAngle[4]);
-        neighborAngle[1] = getAbsAngleDiff(neighborAngle[1], bestAngle[4]);
-        neighborAngle[2] = getAbsAngleDiff(neighborAngle[2], bestAngle[5]);
-        neighborAngle[3] = getAbsAngleDiff(neighborAngle[3], bestAngle[5]);
-        //重新合并角度
-        bestAngle[0] = fmin(bestAngle[0], neighborAngle[0]);
-        bestAngle[1] = fmax(bestAngle[1], neighborAngle[1]);
-        bestAngle[2] = fmin(bestAngle[2], neighborAngle[2]);
-        bestAngle[3] = fmax(bestAngle[3], neighborAngle[3]);
-    }
-    //计算最小角度 这样它就只有0,1,2,3这4个角度值是有意义的了
-    bestAngle[0] = getStandardAngle(bestAngle[4] + bestAngle[0]);
-    bestAngle[1] = getStandardAngle(bestAngle[4] + bestAngle[1]);
-    bestAngle[1] = getAbsAngleDiff(bestAngle[1], bestAngle[0]);
-    bestAngle[2] = getStandardAngle(bestAngle[5] + bestAngle[2]);
-    bestAngle[3] = getStandardAngle(bestAngle[5] + bestAngle[3]);
-    bestAngle[3] = getAbsAngleDiff(bestAngle[3], bestAngle[2]);
+    //bestAngle[4] = getStandardAngle(bestAngle[4]);
+    //bestAngle[5] = getStandardAngle(bestAngle[5]);
+    //// 按照蝶式归约计算
+    //for (int i = 32; i > 1; i/=2)
+    //{
+    //    //计算x位置角度的最大值和最小值
+    //    float xMinAngle = getStandardAngle(bestAngle[4] + bestAngle[0]);
+    //    float xMaxAngle = getStandardAngle(bestAngle[4] + bestAngle[1]);
+    //    //计算y方向的角度的最大值和最小值
+    //    float yMinAngle = getStandardAngle(bestAngle[5] + bestAngle[2]);
+    //    float yMaxAngle = getStandardAngle(bestAngle[5] + bestAngle[3]);
+    //    //获取相邻位置的xy的角度范围
+    //    float neighborAngle[4];
+    //    neighborAngle[0] = __shfl_xor_sync(0xffffffff, xMinAngle, i - 1);
+    //    neighborAngle[1] = __shfl_xor_sync(0xffffffff, xMaxAngle, i - 1);
+    //    neighborAngle[2] = __shfl_xor_sync(0xffffffff, yMinAngle, i - 1);
+    //    neighborAngle[3] = __shfl_xor_sync(0xffffffff, yMaxAngle, i - 1);
+    //    //计算角度的中值差
+    //    neighborAngle[0] = getAbsAngleDiff(neighborAngle[0], bestAngle[4]);
+    //    neighborAngle[1] = getAbsAngleDiff(neighborAngle[1], bestAngle[4]);
+    //    neighborAngle[2] = getAbsAngleDiff(neighborAngle[2], bestAngle[5]);
+    //    neighborAngle[3] = getAbsAngleDiff(neighborAngle[3], bestAngle[5]);
+    //    //重新合并角度
+    //    bestAngle[0] = fmin(bestAngle[0], neighborAngle[0]);
+    //    bestAngle[1] = fmax(bestAngle[1], neighborAngle[1]);
+    //    bestAngle[2] = fmin(bestAngle[2], neighborAngle[2]);
+    //    bestAngle[3] = fmax(bestAngle[3], neighborAngle[3]);
+    //}
+    ////计算最小角度 这样它就只有0,1,2,3这4个角度值是有意义的了
+    //bestAngle[0] = getStandardAngle(bestAngle[4] + bestAngle[0]);
+    //bestAngle[1] = getStandardAngle(bestAngle[4] + bestAngle[1]);
+    //bestAngle[1] = getAbsAngleDiff(bestAngle[1], bestAngle[0]);
+    //bestAngle[2] = getStandardAngle(bestAngle[5] + bestAngle[2]);
+    //bestAngle[3] = getStandardAngle(bestAngle[5] + bestAngle[3]);
+    //bestAngle[3] = getAbsAngleDiff(bestAngle[3], bestAngle[2]);
 }
 
 template<uint32_t CAM_LOAD_NUM>
@@ -185,7 +185,7 @@ __global__ void computeGaussianViewAngle(
     if (idPoint >= gaussianNum)
         return;
     //初始化当前线程维度的最值
-    float bestAngle[6];
+    uint32_t bestAngle[4] = { 0,0,0,0 };
     //准备当前的gaussian点
     //为了和UE里面的变换保持一致，这里把点坐标加载成(x,-z,-y)
     auto gaussianPoint = gaussianList[idPoint];
