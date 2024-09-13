@@ -4,6 +4,9 @@
 #include<iostream>
 #include <thrust/extrema.h>
 
+//保存相机角度时用的数据类型
+typedef uint64_t AngleRecorder;
+
 cudaError_t cudaHandleError(cudaError_t error_code)
 {
     if (error_code != cudaSuccess)
@@ -58,9 +61,11 @@ __device__ float getAbsAngleDiff(float angle, float baseAngle)
 template<bool FIRST_LOOP> //判断是否为第一次循环
 __device__ float compareAngleOneLoop(Point3D* sharedHead,
     Point3D* gaussianHead,
-    uint32_t* bestAngle
+    AngleRecorder* bestAngle
 )
 {
+    constexpr float X_ANGLE_SEG = 6.28318530718 / 64;
+    constexpr float Y_ANGLE_SEG = 3.14159265359 / 64;
     //计算差值向量
     float pointDiff[3] = { sharedHead->x - gaussianHead->x,
         sharedHead->y - gaussianHead->y,
@@ -68,27 +73,12 @@ __device__ float compareAngleOneLoop(Point3D* sharedHead,
     //计算x方向的夹角
     float xAngle = computeAngle<true>(pointDiff);
     float yAngle = computeAngle<false>(pointDiff);
-    //判断是不是第一次记录
-    //if constexpr (FIRST_LOOP)
-    //{
-    //    bestAngle[0] = 0;
-    //    bestAngle[1] = 0;
-    //    bestAngle[2] = 0;
-    //    bestAngle[3] = 0;
-    //    // 记录 x y角度的基准值
-    //    bestAngle[4] = xAngle;
-    //    bestAngle[5] = yAngle;
-    //}
-    //else
-    //{
-    //    //计算两个角度的绝对差
-    //    xAngle = getAbsAngleDiff(xAngle, bestAngle[4]);
-    //    yAngle = getAbsAngleDiff(yAngle, bestAngle[5]);
-    //    bestAngle[0] = fmin(xAngle, bestAngle[0]);
-    //    bestAngle[1] = fmax(xAngle, bestAngle[1]);
-    //    bestAngle[2] = fmin(yAngle, bestAngle[2]);
-    //    bestAngle[3] = fmax(yAngle, bestAngle[3]);
-    //}
+    //计算xy角度所在的bit位
+    int xBit = xAngle / X_ANGLE_SEG;
+    int yBit = yAngle / Y_ANGLE_SEG;
+    //对原本的角度范围做与操作
+    bestAngle[0] |= (1 << xBit);
+    bestAngle[1] |= (1 << yBit);
 }
 
 //一个计算周期
@@ -99,7 +89,7 @@ template<bool FIRST_LOOP, //是否要作为第一步来处理
 __device__ void bestAngleOneLoop(Point3D* sharedHead, //共享内存的头指针，会用于往这里面存储数据
     Point3D* camCenterList, //相机光心列表，这是global memory
     Point3D* gaussianPoint, //3D高斯点, 这里面仅仅是一个3D坐标 属于是寄存器上面的指针
-    uint32_t* bestAngle, //目前的最佳角度 它可能是未初始化过的，这会由FIRST_STEP这个模板参数来决定
+    AngleRecorder* bestAngle, //目前的最佳角度 它可能是未初始化过的，这会由FIRST_STEP这个模板参数来决定
     unsigned cameraNum //剩余需要读取的相机个数
 )
 {
@@ -132,7 +122,7 @@ inline __device__ float getStandardAngle(float angle)
 }
 
 //最终的角度归约操作
-__device__ void angleRangeReduction(uint32_t* bestAngle,uint32_t cameraNum)
+__device__ void angleRangeReduction(AngleRecorder* bestAngle,uint32_t cameraNum)
 {
     //把线程负责的角度重置到0-2PI
     //bestAngle[4] = getStandardAngle(bestAngle[4]);
@@ -185,7 +175,7 @@ __global__ void computeGaussianViewAngle(
     if (idPoint >= gaussianNum)
         return;
     //初始化当前线程维度的最值
-    uint32_t bestAngle[4] = { 0,0,0,0 };
+    AngleRecorder bestAngle[2] = { 0,0 };
     //准备当前的gaussian点
     //为了和UE里面的变换保持一致，这里把点坐标加载成(x,-z,-y)
     auto gaussianPoint = gaussianList[idPoint];
