@@ -124,42 +124,15 @@ inline __device__ float getStandardAngle(float angle)
 //最终的角度归约操作
 __device__ void angleRangeReduction(AngleRecorder* bestAngle,uint32_t cameraNum)
 {
-    //把线程负责的角度重置到0-2PI
-    //bestAngle[4] = getStandardAngle(bestAngle[4]);
-    //bestAngle[5] = getStandardAngle(bestAngle[5]);
-    //// 按照蝶式归约计算
-    //for (int i = 32; i > 1; i/=2)
-    //{
-    //    //计算x位置角度的最大值和最小值
-    //    float xMinAngle = getStandardAngle(bestAngle[4] + bestAngle[0]);
-    //    float xMaxAngle = getStandardAngle(bestAngle[4] + bestAngle[1]);
-    //    //计算y方向的角度的最大值和最小值
-    //    float yMinAngle = getStandardAngle(bestAngle[5] + bestAngle[2]);
-    //    float yMaxAngle = getStandardAngle(bestAngle[5] + bestAngle[3]);
-    //    //获取相邻位置的xy的角度范围
-    //    float neighborAngle[4];
-    //    neighborAngle[0] = __shfl_xor_sync(0xffffffff, xMinAngle, i - 1);
-    //    neighborAngle[1] = __shfl_xor_sync(0xffffffff, xMaxAngle, i - 1);
-    //    neighborAngle[2] = __shfl_xor_sync(0xffffffff, yMinAngle, i - 1);
-    //    neighborAngle[3] = __shfl_xor_sync(0xffffffff, yMaxAngle, i - 1);
-    //    //计算角度的中值差
-    //    neighborAngle[0] = getAbsAngleDiff(neighborAngle[0], bestAngle[4]);
-    //    neighborAngle[1] = getAbsAngleDiff(neighborAngle[1], bestAngle[4]);
-    //    neighborAngle[2] = getAbsAngleDiff(neighborAngle[2], bestAngle[5]);
-    //    neighborAngle[3] = getAbsAngleDiff(neighborAngle[3], bestAngle[5]);
-    //    //重新合并角度
-    //    bestAngle[0] = fmin(bestAngle[0], neighborAngle[0]);
-    //    bestAngle[1] = fmax(bestAngle[1], neighborAngle[1]);
-    //    bestAngle[2] = fmin(bestAngle[2], neighborAngle[2]);
-    //    bestAngle[3] = fmax(bestAngle[3], neighborAngle[3]);
-    //}
-    ////计算最小角度 这样它就只有0,1,2,3这4个角度值是有意义的了
-    //bestAngle[0] = getStandardAngle(bestAngle[4] + bestAngle[0]);
-    //bestAngle[1] = getStandardAngle(bestAngle[4] + bestAngle[1]);
-    //bestAngle[1] = getAbsAngleDiff(bestAngle[1], bestAngle[0]);
-    //bestAngle[2] = getStandardAngle(bestAngle[5] + bestAngle[2]);
-    //bestAngle[3] = getStandardAngle(bestAngle[5] + bestAngle[3]);
-    //bestAngle[3] = getAbsAngleDiff(bestAngle[3], bestAngle[2]);
+    //进行归约操作，合并一个warp里面的32个线程
+    for (int i = 0; i > 1; i>>=1)
+    {
+        //目前的x范围
+        auto xRange = bestAngle[0];
+        auto yRange = bestAngle[1];
+        bestAngle[0] = xRange | __shfl_xor_sync(0xffffffff, xRange, i - 1);
+        bestAngle[1] = yRange | __shfl_xor_sync(0xffffffff, yRange, i - 1);
+    }
 }
 
 template<uint32_t CAM_LOAD_NUM>
