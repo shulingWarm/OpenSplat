@@ -361,7 +361,7 @@ extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
 		gaussianNum);
 	//保存每个 3D gaussian的视角范围
 	saveGaussianViewRange(viewAngle.data(), gaussianNum,
-		"D:/temp/viewRange.bin");
+		"E:/temp/viewRange.bin");
 	//调用模型的转换
 	convertToSplatScene(*retModel, *splatScene);
 }
