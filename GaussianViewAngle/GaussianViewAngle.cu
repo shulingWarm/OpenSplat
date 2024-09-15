@@ -3,6 +3,7 @@
 #include<cuda_runtime_api.h>
 #include<iostream>
 #include <thrust/extrema.h>
+#include<vector>
 
 //保存相机角度时用的数据类型
 typedef uint64_t AngleRecorder;
@@ -138,7 +139,7 @@ __device__ void angleRangeReduction(AngleRecorder* bestAngle,uint32_t cameraNum)
 template<uint32_t CAM_LOAD_NUM>
 __global__ void computeGaussianViewAngle(
     Point3D* gaussianList, Point3D* camCenterList,
-    float* dstViewAngle, unsigned cameraNum, unsigned gaussianNum
+    AngleRecorder* dstViewAngle, unsigned cameraNum, unsigned gaussianNum
 ) {
     //用于存储相机光心坐标的共享内存
     __shared__ Point3D sharedCamCenter[CAM_LOAD_NUM];
@@ -171,12 +172,115 @@ __global__ void computeGaussianViewAngle(
     //调用最终的角度归约
     angleRangeReduction(bestAngle, cameraNum);
     //计算当前线程应该写入的归约角度位置
-    float* dstViewHead = dstViewAngle + idPoint * 4;
+    auto dstViewHead = dstViewAngle + idPoint * 2;
     //把归约后的角度保存到view range
     if (threadIdx.x % 32 == 0)
     {
-        for (int i = 0; i < 4; ++i)
+        for (int i = 0; i < 2; ++i)
             dstViewHead[i] = bestAngle[i];
+    }
+}
+
+static void convertSingleRecorder(AngleRecorder* recorder,
+    float* viewRange,
+    float bitSeg
+)
+{
+    //寻找recorder里面的第一个1出现的位置
+    int idBegin = -1;
+    for (int i = 0; i < 64; ++i)
+    {
+        //判断当前位置是不是1
+        if (recorder[0] & (1 << i))
+        {
+            idBegin = i;
+            break;
+        }
+    }
+    //如果没有找到有效的1,那就可以直接退出了
+    if (idBegin == -1)
+    {
+        viewRange[0] = 0;
+        viewRange[1] = 0;
+        return;
+    }
+    //初始化目前最大的空位置区间
+    int maxZeroSize = 0;
+    int maxZeroBegin = -1;
+    //目前的临时起始位置
+    int tempBegin = -1;
+    int tempLength = 0;
+    //寻找这里面最大的零区间
+    for (int i = 1; i < 64; ++i)
+    {
+        //当前位置的实际偏移量
+        int idOffset = (idBegin + i) % 64;
+        //判断当前位置是不是1
+        if ((1 << idOffset) & recorder[0])
+        {
+            //判断目前是否存在有效的数据
+            if (tempLength > maxZeroSize)
+            {
+                maxZeroSize = tempLength;
+                maxZeroBegin = tempBegin;
+            }
+            tempLength = 0;
+            tempBegin = -1;
+        }
+        else
+        {
+            //判断目前是否存在有效的begin
+            if (tempBegin == -1)
+            {
+                tempBegin = idOffset;
+            }
+            ++tempLength;
+        }
+    }
+    //判断目前是否存在有效的数据
+    //这是考虑最后一个位置还没结束的情况
+    if (tempLength > maxZeroSize)
+    {
+        maxZeroSize = tempLength;
+        maxZeroBegin = tempBegin;
+    }
+    //计算正角度的开始位置
+    int postiveBegin = (maxZeroBegin + maxZeroSize) % 64;
+    int postiveLength = 64 - maxZeroSize;
+    //如果负区域角度较大那就按照负区域角度来算
+    int finalBegin = postiveBegin;
+    int finalLength;
+    //如果零区间较小，那说明有效区间是一个U角
+    //这种情况下应该存储无效角度区间，然后把角度存储成一个负数
+    if (maxZeroSize < postiveLength)
+    {
+        finalLength = -maxZeroSize;
+    }
+    else
+    {
+        finalLength = postiveLength;
+    }
+    //把bit形式的角度最终转换成float形式的角度范围
+    viewRange[0] = finalBegin * bitSeg;
+    viewRange[1] = finalLength * bitSeg;
+}
+
+//把bit形式的角度范围转换成float形式的角度范围
+void convertAngleRecorderToViewRange(AngleRecorder* angleRecorder,
+    float* dstViewRange,uint32_t gaussianNum //高斯点的个数
+)
+{
+    constexpr float X_ANGLE_SEG = 6.28318530718 / 64;
+    constexpr float Y_ANGLE_SEG = 3.14159265359 / 64;
+    //遍历每个需要被处理的高斯点，这就仅仅由一个高斯来完成
+    for (uint32_t idPoint = 0; idPoint < gaussianNum; ++idPoint)
+    {
+        auto viewRangeHead = dstViewRange + idPoint * 4;
+        //recorder的头指针
+        auto recorderHead = angleRecorder + idPoint * 2;
+        //把recorder的x,y转换到y的形式
+        convertSingleRecorder(recorderHead, viewRangeHead, X_ANGLE_SEG);
+        convertSingleRecorder(recorderHead + 1, viewRangeHead + 2, Y_ANGLE_SEG);
     }
 }
 
@@ -191,15 +295,20 @@ void getGaussianViewAngle(float* gaussianList, float* camCenterList,
     cudaHandleError(cudaMalloc((void**)&gpuCamCenter, sizeof(float) * cameraNum * 3));
     cudaHandleError(cudaMemcpy(gpuCamCenter, camCenterList, sizeof(float) * cameraNum * 3,
         cudaMemcpyHostToDevice));
-    float* gpuViewAngle;
-    cudaHandleError(cudaMalloc((void**)&gpuViewAngle, sizeof(float) * gaussianNum * 4));
+    AngleRecorder* gpuViewAngle;
+    cudaHandleError(cudaMalloc((void**)&gpuViewAngle, sizeof(AngleRecorder) * gaussianNum * 2));
     //开辟一段内存，用于记录结果中每个3D gaussian的视角范围
     computeGaussianViewAngle<256> << <(gaussianNum + 1) / 2, 256 >> > (
         (Point3D*)gaussianList, (Point3D*)gpuCamCenter,
         gpuViewAngle, cameraNum, gaussianNum);
-    //把视角范围复制到cpu
-    cudaHandleError(cudaMemcpy(dstViewAngle, gpuViewAngle, sizeof(float) * gaussianNum * 4,
-        cudaMemcpyDeviceToHost));
+    //准备角度记录工作的cpu版本
+    std::vector<AngleRecorder> recorderVec(gaussianNum * 2);
+    //把视角范围保存到cpu
+    cudaHandleError(cudaMemcpy(recorderVec.data(), gpuViewAngle,
+        sizeof(AngleRecorder) * recorderVec.size(), cudaMemcpyDeviceToHost));
+    //传入最终的目标float范围，做最终的角度范围调整
+    convertAngleRecorderToViewRange(recorderVec.data(),
+        dstViewAngle, gaussianNum);
     //释放这中间用到的gpu内存
     cudaHandleError(cudaFree(gpuCamCenter));
     cudaHandleError(cudaFree(gpuViewAngle));
