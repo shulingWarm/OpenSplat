@@ -182,6 +182,42 @@ __global__ void computeGaussianViewAngle(
     }
 }
 
+//不需要考虑循环的角度变换
+static void noLoopRangeConvert(AngleRecorder* recorder,
+    float* viewRange,
+    float bitSeg
+)
+{
+    //初始化最佳的起始角度
+    int idBegin = 0;
+    int maxLength = 0;
+    int tempIdBegin = -1;
+    int tempLength = 0;
+    //从头到尾遍历
+    for (int i = 0; i < 64; ++i)
+    {
+        //判断当前位置是不是1
+        if (recorder[0] & (1LLU << i))
+        {
+            //判断是否处于记录状态
+            if (tempIdBegin == -1)
+            {
+                tempIdBegin = i;
+            }
+            tempLength = i - tempIdBegin + 1;
+        }
+    }
+    //循环结束之后的最终计算
+    if (tempLength > maxLength)
+    {
+        maxLength = tempLength;
+        idBegin = tempIdBegin;
+    }
+    //把bit形式的角度最终转换成float形式的角度范围
+    viewRange[0] = idBegin * bitSeg;
+    viewRange[1] = maxLength * bitSeg;
+}
+
 static void convertSingleRecorder(AngleRecorder* recorder,
     float* viewRange,
     float bitSeg
@@ -281,7 +317,8 @@ void convertAngleRecorderToViewRange(AngleRecorder* angleRecorder,
         auto recorderHead = angleRecorder + idPoint * 2;
         //把recorder的x,y转换到y的形式
         convertSingleRecorder(recorderHead, viewRangeHead, X_ANGLE_SEG);
-        convertSingleRecorder(recorderHead + 1, viewRangeHead + 2, Y_ANGLE_SEG);
+        //Y是纬度，它是没有周期性的
+        noLoopRangeConvert(recorderHead + 1, viewRangeHead + 2, Y_ANGLE_SEG);
         //if (idPoint % 100 == 0)
         //{
         //    //打印x范围的bit位
