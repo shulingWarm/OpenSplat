@@ -4,6 +4,7 @@
 #include<iostream>
 #include <thrust/extrema.h>
 #include<vector>
+#include<bitset>
 
 //保存相机角度时用的数据类型
 typedef uint64_t AngleRecorder;
@@ -78,8 +79,8 @@ __device__ float compareAngleOneLoop(Point3D* sharedHead,
     int xBit = xAngle / X_ANGLE_SEG;
     int yBit = yAngle / Y_ANGLE_SEG;
     //对原本的角度范围做与操作
-    bestAngle[0] |= (1 << xBit);
-    bestAngle[1] |= (1 << yBit);
+    bestAngle[0] |= (1LLU << xBit);
+    bestAngle[1] |= (1LLU << yBit);
 }
 
 //一个计算周期
@@ -191,7 +192,7 @@ static void convertSingleRecorder(AngleRecorder* recorder,
     for (int i = 0; i < 64; ++i)
     {
         //判断当前位置是不是1
-        if (recorder[0] & (1 << i))
+        if (recorder[0] & (1LLU << i))
         {
             idBegin = i;
             break;
@@ -216,7 +217,7 @@ static void convertSingleRecorder(AngleRecorder* recorder,
         //当前位置的实际偏移量
         int idOffset = (idBegin + i) % 64;
         //判断当前位置是不是1
-        if ((1 << idOffset) & recorder[0])
+        if ((1LLU << idOffset) & recorder[0])
         {
             //判断目前是否存在有效的数据
             if (tempLength > maxZeroSize)
@@ -281,6 +282,14 @@ void convertAngleRecorderToViewRange(AngleRecorder* angleRecorder,
         //把recorder的x,y转换到y的形式
         convertSingleRecorder(recorderHead, viewRangeHead, X_ANGLE_SEG);
         convertSingleRecorder(recorderHead + 1, viewRangeHead + 2, Y_ANGLE_SEG);
+        //if (idPoint % 100 == 0)
+        //{
+        //    //打印x范围的bit位
+        //    std::cout <<"xRange: " << std::bitset<64>(recorderHead[0]) << " " <<
+        //        viewRangeHead[0] << " " << viewRangeHead[1] << std::endl;
+        //    std::cout << "yRange: " << std::bitset<64>(recorderHead[1]) << " " <<
+        //        viewRangeHead[2] << " " << viewRangeHead[3] << std::endl;
+        //}
     }
 }
 
