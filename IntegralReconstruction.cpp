@@ -309,6 +309,28 @@ static void getCamCenterList(std::vector<float>& dstCenterList,
 	}
 }
 
+//把3D坐标保存成ply文件，这里仅仅是做最简单的点保存
+static void savePlyFile(float* pointData,uint32_t pointNum,std::string filePath)
+{
+	std::fstream fileHandle(filePath, std::ios::out | std::ios::binary);
+	if (!fileHandle.is_open())
+	{
+		std::cerr << "Cannot open " << filePath << std::endl;
+		return;
+	}
+	//写入ply的数据头
+	fileHandle << "ply\n";
+	fileHandle << "format binary_little_endian 1.0\n"; // 注意这里指定了字节序
+	fileHandle << "element vertex " << pointNum << "\n";
+	fileHandle << "property float x\n";
+	fileHandle << "property float y\n";
+	fileHandle << "property float z\n";
+	fileHandle << "end_header\n";
+	//写入点的二进制数据
+	fileHandle.write((char*)pointData, sizeof(float) * 3 * pointNum);
+	fileHandle.close();
+}
+
 //保存3D高斯的视角范围
 static void saveGaussianViewRange(
 	float* viewRange,
