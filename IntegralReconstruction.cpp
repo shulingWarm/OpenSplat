@@ -300,12 +300,6 @@ static void getCamCenterList(std::vector<float>& dstCenterList,
 		convertQuanternionsToRotMat(invertQuant, rotMat);
 		//对一个3D点做旋转
 		applyRotation(rotMat, tempCamera.translation, &dstCenterList[i * 3]);
-		//把相机光心变换成x,-z,-y，这是为了和UE里面的gaussian预加载保持一致
-		auto camCenterHead = &dstCenterList[i * 3];
-		auto y = camCenterHead[1];
-		auto z = camCenterHead[2];
-		camCenterHead[1] = -z;
-		camCenterHead[2] = -y;
 	}
 }
 
@@ -329,6 +323,20 @@ static void savePlyFile(float* pointData,uint32_t pointNum,std::string filePath)
 	//写入点的二进制数据
 	fileHandle.write((char*)pointData, sizeof(float) * 3 * pointNum);
 	fileHandle.close();
+}
+
+//交换一个点列表的y,z
+static void exchangeYZ(float* pointData,uint32_t pointNum)
+{
+	//遍历所有的点数据
+	for (int idPoint = 0; idPoint < pointNum; ++idPoint)
+	{
+		auto pointHead = pointData + idPoint * 3;
+		auto y = pointHead[1];
+		auto z = pointHead[2];
+		pointHead[1] = -z;
+		pointHead[2] = -y;
+	}
 }
 
 //保存3D高斯的视角范围
