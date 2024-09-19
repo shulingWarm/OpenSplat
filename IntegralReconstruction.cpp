@@ -384,6 +384,10 @@ extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
 	//获取center的列表
 	std::vector<float> camCenterList;
 	getCamCenterList(camCenterList, sparseScene);
+	//把相机光心的列表保存成点云
+	savePlyFile(camCenterList.data(), camCenterList.size() / 3, "E:/temp/camera.ply");
+	//置换相机光心里面的y,z坐标，这是为了和后面的gaussian的预处理阶段对齐
+	exchangeYZ(camCenterList.data(), camCenterList.size() / 3);
 	auto gaussianNum = getPointNum(*retModel);
 	std::vector<float> viewAngle(gaussianNum * 4);
 	getGaussianViewAngle(getGaussianList(*retModel), camCenterList.data(),
