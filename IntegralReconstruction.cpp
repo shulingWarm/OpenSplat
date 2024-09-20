@@ -357,6 +357,8 @@ static void saveGaussianViewRange(
 extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
 	const char* workspaceStr,void* dstScene)
 {
+	testSlice();
+	return;
 	//把数据内容转换成SplatScene
 	auto splatScene = reinterpret_cast<SplatScene*>(dstScene);
 	//直接从文件里面读取点云

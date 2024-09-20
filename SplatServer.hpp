@@ -165,9 +165,50 @@ static void splatCompute(InputData inputData, std::string outputPath,Model*& ret
 	model.save(outputPath);
 }
 
+//取出InputData里面的光心坐标
+static void getCameraCenterFromInputData(
+	InputData& inputData,
+	float* camCenter
+)
+{
+	//遍历input data里面的每个camera
+	for (int idCamera = 0; idCamera < inputData.cameras.size(); ++idCamera)
+	{
+
+	}
+}
+
+//测试torch slice的效果
+void testSlice()
+{
+	//先随便新建一个torch tensor
+	torch::Tensor testTensor = torch::zeros({ 4,4 });
+	//再新建一个切片用于表示旋转
+	auto rotTensor = torch::randn({ 3,3 });
+	auto transTensor = torch::randn({ 3,1 });
+	std::cout << "Rotation" << std::endl;
+	std::cout << rotTensor << std::endl;
+	std::cout << "Translation" << std::endl;
+	std::cout << transTensor << std::endl;
+	//打印原始的tensor
+	std::cout << "original tensor" << std::endl;
+	std::cout << testTensor << std::endl;
+	testTensor.index_put_({ Slice(None, 3), Slice(None, 3) }, rotTensor);
+	std::cout << "Apply rot tensor" << std::endl;
+	std::cout << testTensor << std::endl;
+	testTensor.index_put_({ Slice(None, 3), Slice(3, 4) }, transTensor);
+	std::cout << "Apply transpose tensor" << std::endl;
+	std::cout << testTensor << std::endl;
+	//然后执行最后一步的oprngl形式的处理
+	testTensor.index_put_({ Slice(0, 3), Slice(1,3) }, testTensor.index({ Slice(0, 3), Slice(1,3) }) * (-1.0f));
+	std::cout << "Final index put" << std::endl;
+	std::cout << testTensor << std::endl;
+}
+
 //运行splat server的过程，弄完之后直接把结果保存成ply就可以了
 void splatServer(SparseScene& sparseScene,
-	std::string dstFile,Model*& retModel
+	std::string dstFile,Model*& retModel,
+	float** camCenter = nullptr
 ) {
 	std::cout << "running splatServer" << std::endl;
 	//把sparse scene转换成colmap
