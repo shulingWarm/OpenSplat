@@ -174,7 +174,19 @@ static void getCameraCenterFromInputData(
 	//遍历input data里面的每个camera
 	for (int idCamera = 0; idCamera < inputData.cameras.size(); ++idCamera)
 	{
-
+		//当前位置的相机坐标
+		auto cameraPose = inputData.cameras.at(idCamera).camToWorld.index({ Slice(0,3), Slice(3,4) }).clone();
+		//如果是第一个相机，就打印一下，这是为了确认一下读取结果是正确的
+		if (idCamera == 0)
+		{
+			std::cout << "camera center read check" << std::endl;
+			std::cout << inputData.cameras.at(idCamera).camToWorld << std::endl;
+			std::cout << cameraPose << std::endl;
+		}
+		//当前相机位置的头指针
+		auto camCenterHead = camCenter + idCamera * 3;
+		//直接复制里面的内存
+		memcpy(camCenterHead, cameraPose.data_ptr(), sizeof(float) * 3);
 	}
 }
 
@@ -208,7 +220,7 @@ void testSlice()
 //运行splat server的过程，弄完之后直接把结果保存成ply就可以了
 void splatServer(SparseScene& sparseScene,
 	std::string dstFile,Model*& retModel,
-	float** camCenter = nullptr
+	std::vector<float>& camCenter
 ) {
 	std::cout << "running splatServer" << std::endl;
 	//把sparse scene转换成colmap
@@ -217,4 +229,6 @@ void splatServer(SparseScene& sparseScene,
 	std::cout << "begin splatCompute" << std::endl;
 	//调用splat过程的核心计算
 	splatCompute(inputData, dstFile,retModel);
+	camCenter.resize(inputData.cameras.size() * 3);
+	getCameraCenterFromInputData(inputData, camCenter.data());
 }

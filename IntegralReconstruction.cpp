@@ -357,8 +357,6 @@ static void saveGaussianViewRange(
 extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
 	const char* workspaceStr,void* dstScene)
 {
-	testSlice();
-	return;
 	//把数据内容转换成SplatScene
 	auto splatScene = reinterpret_cast<SplatScene*>(dstScene);
 	//直接从文件里面读取点云
@@ -381,11 +379,10 @@ extern "C" __declspec(dllexport) void reconstruct(const char* imgPathStr,
 	}
 
 	Model* retModel;
-	//调用splat的计算
-	splatServer(sparseScene, "E:/temp/splat.ply", retModel);
-	//获取center的列表
+	//最后的光心坐标的数据保存的位置
 	std::vector<float> camCenterList;
-	getCamCenterList(camCenterList, sparseScene);
+	//调用splat的计算
+	splatServer(sparseScene, "E:/temp/splat.ply", retModel, camCenterList);
 	//把相机光心的列表保存成点云
 	savePlyFile(camCenterList.data(), camCenterList.size() / 3, "E:/temp/camera.ply");
 	//置换相机光心里面的y,z坐标，这是为了和后面的gaussian的预处理阶段对齐
